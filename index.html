@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>도둑잡기 2인 게임</title>
+
+<style>
+  body {
+    margin: 0;
+    background: url('BACKGROUND.JPG') center/cover no-repeat fixed;
+    overflow: hidden;
+  }
+
+  #gameArea {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  .playerCard {
+    position: absolute;
+    width: 132px;
+    height: 186px;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.4);
+    transition: all 0.25s ease;
+  }
+
+  .aiCard {
+    position: absolute;
+    width: 90px;
+    height: 130px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  }
+
+  #centerStack {
+    position: absolute;
+    width: 380px;
+    height: 180px;
+    left: 30%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .stackCard {
+    position: absolute;
+    width: 110px;
+    height: 155px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+
+  #gameOverText {
+    position: absolute;
+    top: 45%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-size: 140px;
+    font-weight: bold;
+    text-shadow: 0 6px 20px rgba(0,0,0,0.7);
+    display: none;
+    white-space: nowrap;
+  }
+
+  #endMessage {
+    position: absolute;
+    top: 62%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-size: 64px;
+    font-weight: bold;
+    text-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    white-space: nowrap;
+  }
+</style>
+</head>
+
+<body>
+<div id="gameArea">
+  <div id="centerStack"></div>
+  <div id="gameOverText">GAME OVER</div>
+  <div id="endMessage"></div>
+</div>
+
+<script>
+/* ===== 카드 준비 ===== */
+const suits = ["C","D","H","S"];
+const cards = [];
+
+for (let s of suits) {
+  for (let n = 1; n <= 10; n++) {
+    cards.push({
+      id: `${s}_${n}`,
+      suit: s,
+      num: n,
+      isJoker: false,
+      file: `cards/${s}_${n}.JPG`
+    });
+  }
+}
+
+cards.push({
+  id: "JOKER",
+  suit: "joker",
+  num: 0,
+  isJoker: true,
+  file: "cards/JOKER.JPG"
+});
+
+cards.sort(() => Math.random() - 0.5);
+
+let player = cards.slice(0, 21);
+let ai = cards.slice(21);
+
+const gameArea = document.getElementById("gameArea");
+let centerStack = [];
+let selected = [];
+let lastPlayerStealTime = null;
+
+/* ===== 카드 생성 ===== */
+function createCard(card, owner, x, y) {
+  const img = document.createElement("img");
+
+  if (owner === "player") {
+    img.className = "playerCard";
+    img.src = card.file;
+  } else {
+    img.className = "aiCard";
+    img.src = "cards/BACK.PNG";
+  }
+
+  img.style.left = x + "px";
+  img.style.top = y + "px";
+
+  img.onclick = () => {
+    if (owner === "player") selectPlayerCard(card, img);
+    else stealFromAI(card);
+  };
+
+  gameArea.appendChild(img);
+}
+
+/* ===== 렌더 ===== */
+function render() {
+  gameArea.innerHTML =
+    '<div id="centerStack"></div>' +
+    '<div id="gameOverText">GAME OVER</div>' +
+    '<div id="endMessage"></div>';
+
+  const center = document.getElementById("centerStack");
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  let pStart = w/2 - (player.length * 55) / 2;
+  player.forEach((card, i) => {
+    createCard(card, "player", pStart + i * 55, h - 200);
+  });
+
+  let aStart = w/2 - (ai.length * 45) / 2;
+  ai.forEach((card, i) => {
+    createCard(card, "ai", aStart + i * 45, 40);
+  });
+
+  centerStack.forEach((card, i) => {
+    const img = document.createElement("img");
+    img.className = "stackCard";
+    img.src = card.file;
+    img.style.left = (i * 25) + "px";
+    center.appendChild(img);
+  });
+
+  checkGameEnd();
+}
+
+/* ===== 게임 종료 ===== */
+function checkGameEnd() {
+  const playerOnlyJoker = (player.length === 1 && player[0].isJoker);
+  const aiOnlyJoker = (ai.length === 1 && ai[0].isJoker);
+
+  if (playerOnlyJoker || aiOnlyJoker) {
+    document.getElementById("gameOverText").style.display = "block";
+    document.getElementById("endMessage").innerText =
+      playerOnlyJoker ? "YOU LOSE" : "YOU WIN!";
+  }
+}
+
+/* ===== 게임 로직 ===== */
+function selectPlayerCard(card, div) {
+  if (card.isJoker) return;
+
+  const exists = selected.find(s => s.card.id === card.id);
+  if (exists) {
+    selected = selected.filter(s => s.card.id !== card.id);
+    div.style.transform = "translateY(0)";
+  } else {
+    if (selected.length >= 2) return;
+    selected.push({ card, div });
+    div.style.transform = "translateY(-25px)";
+    if (selected.length === 2) setTimeout(tryPlayCards, 200);
+  }
+}
+
+function tryPlayCards() {
+  if (selected.length !== 2) return;
+  const [a, b] = selected;
+
+  if (a.card.num !== b.card.num) {
+    a.div.style.transform = b.div.style.transform = "translateY(0)";
+    selected = [];
+    return;
+  }
+
+  centerStack.push(a.card, b.card);
+  player = player.filter(c => c.id !== a.card.id && c.id !== b.card.id);
+  selected = [];
+  render();
+  setTimeout(aiAutoPlay, 600);
+}
+
+function stealFromAI(card) {
+  ai = ai.filter(c => c.id !== card.id);
+  player.push(card);
+  lastPlayerStealTime = Date.now();
+  render();
+}
+
+setInterval(() => {
+  if (lastPlayerStealTime && Date.now() - lastPlayerStealTime >= 5000) {
+    aiStealFromPlayer();
+    lastPlayerStealTime = null;
+  }
+}, 500);
+
+function aiStealFromPlayer() {
+  if (!player.length) return;
+  const idx = Math.floor(Math.random() * player.length);
+  const card = player.splice(idx, 1)[0];
+  ai.push(card);
+  aiAutoPlay();
+  render();
+}
+
+function aiAutoPlay() {
+  const g = {};
+  ai.forEach(c => {
+    if (!c.isJoker) (g[c.num] ??= []).push(c);
+  });
+
+  for (let n in g) {
+    if (g[n].length >= 2) {
+      const [a,b] = g[n];
+      ai = ai.filter(c => c.id !== a.id && c.id !== b.id);
+      centerStack.push(a,b);
+      render();
+      return;
+    }
+  }
+}
+
+render();
+</script>
+</body>
+</html>
